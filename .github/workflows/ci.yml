@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  # ── Python lint ─────────────────────────────────────────────────────────────
+  lint-python:
+    name: Python lint (flake8)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install flake8
+        run: pip install flake8
+
+      - name: Run flake8
+        run: |
+          flake8 flask_service/ \
+            --max-line-length=100 \
+            --extend-ignore=E501 \
+            --exclude=flask_service/.venv
+
+  # ── Python tests ────────────────────────────────────────────────────────────
+  test-python:
+    name: Python tests (pytest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install system dependencies (libsndfile for soundfile/librosa)
+        run: sudo apt-get install -y --no-install-recommends libsndfile1
+
+      - name: Install Python dependencies
+        working-directory: flask_service
+        run: pip install -r requirements.txt
+
+      - name: Copy TFLite model for tests
+        run: |
+          mkdir -p flask_service/models
+          cp assets/models/cnn_model.tflite flask_service/models/cnn_model.tflite
+
+      - name: Run pytest with coverage
+        working-directory: flask_service
+        run: |
+          pytest tests/ -v \
+            --cov=. \
+            --cov-report=term-missing \
+            --cov-fail-under=60
+
+  # ── Flutter lint ─────────────────────────────────────────────────────────────
+  lint-flutter:
+    name: Flutter lint (dart analyze)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.x"
+          channel: stable
+          cache: true
+
+      - name: Get Flutter dependencies
+        run: flutter pub get
+
+      - name: Dart analyze
+        run: flutter analyze --no-pub
+
+      - name: Check Flutter formatting
+        run: dart format --output=none --set-exit-if-changed lib/

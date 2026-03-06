@@ -1,0 +1,29 @@
+# SafeGuardHer Flask Service — Python Dependencies
+# Install: pip install -r requirements.txt
+# Tested with Python 3.11–3.13
+
+# ── Web framework ────────────────────────────────────────────────────────────
+flask>=3.0.3
+flask-cors>=4.0.1
+gunicorn>=22.0.0
+
+# ── Audio processing ─────────────────────────────────────────────────────────
+# numpy 2.x is required for Python 3.13+
+numpy>=1.26.4
+librosa>=0.10.2
+soundfile>=0.12.1
+
+# ── TFLite inference ─────────────────────────────────────────────────────────
+# ai-edge-litert is Google's replacement for the deprecated tflite-runtime.
+# It supports Python 3.9-3.13 and is the recommended lightweight interpreter.
+ai-edge-litert>=1.0.1
+
+# Fallback: if ai-edge-litert install fails, uncomment tensorflow instead:
+# tensorflow>=2.18.0
+
+# ── Data validation ──────────────────────────────────────────────────────────
+pydantic>=2.7.1
+
+# ── Testing ──────────────────────────────────────────────────────────────────
+pytest>=8.2.2
+pytest-cov>=5.0.0
