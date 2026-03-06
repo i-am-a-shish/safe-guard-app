@@ -68,7 +68,18 @@ def _load_audio(audio_bytes: bytes) -> np.ndarray:
     if samples.size == 0:
         raise ValueError("Audio is empty after decoding.")
 
-    logger.debug("Loaded audio: %d samples @ %d Hz", samples.size, sr)
+    duration = samples.size / sr
+    rms = float(np.sqrt(np.mean(samples ** 2)))
+    peak = float(np.abs(samples).max())
+    logger.info(
+        "[AUDIO INPUT] ✅ Audio received by preprocessing — "
+        "samples=%d  duration=%.3fs  RMS=%.6f  peak=%.6f  "
+        "%s",
+        samples.size, duration, rms, peak,
+        "(very quiet — rms<0.001)" if rms < 0.001
+        else "(quiet — rms<0.01)" if rms < 0.01
+        else "(audible)",
+    )
     return samples
 
 
@@ -98,7 +109,10 @@ def _compute_mel_spectrogram(samples: np.ndarray) -> np.ndarray:
     # Power -> dB, reference at max, TOP_DB clip -- matches librosa.power_to_db defaults
     log_mel = librosa.power_to_db(mel_spec, ref=np.max, top_db=TOP_DB)
 
-    logger.debug("Mel spectrogram shape: %s", log_mel.shape)
+    logger.info(
+        "[SPECTROGRAM] shape=%s  min=%.4f  max=%.4f  mean=%.4f",
+        log_mel.shape, log_mel.min(), log_mel.max(), log_mel.mean(),
+    )
     return log_mel.astype(np.float32)
 
 
@@ -170,5 +184,10 @@ def preprocess_audio(audio_bytes: bytes) -> np.ndarray:
     fixed = _pad_or_trim(normalised, target_frames=MEL_FRAMES)
     tensor = fixed.reshape(1, MEL_BANDS, MEL_FRAMES, 1)
 
-    logger.debug("Final tensor shape: %s  dtype: %s", tensor.shape, tensor.dtype)
+    logger.info(
+        "[MODEL INPUT] ✅ Tensor ready for inference — shape=%s  dtype=%s  "
+        "min=%.4f  max=%.4f  mean=%.4f",
+        tensor.shape, tensor.dtype,
+        float(tensor.min()), float(tensor.max()), float(tensor.mean()),
+    )
     return tensor

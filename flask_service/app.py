@@ -108,7 +108,8 @@ def _run_inference(tensor: np.ndarray) -> float:
 
     output = _interpreter.get_tensor(output_details[0]["index"])
     probability = float(output[0][0])
-    logger.debug("Inference probability: %.4f", probability)
+    logger.info("[MODEL OUTPUT] ✅ Inference complete — probability=%.6f  label=%s",
+                probability, "distress" if probability > DISTRESS_THRESHOLD else "normal")
     return probability
 
 
@@ -211,6 +212,23 @@ def create_app() -> Flask:
 
         logger.info("[%s] Audio bytes: %d", request_id, len(audio_bytes))
 
+        # Debug: log basic audio amplitude stats for the raw bytes
+        try:
+            import struct
+            num_samples = len(audio_bytes) // 2
+            if num_samples > 0:
+                samples_raw = struct.unpack(f"<{num_samples}h", audio_bytes[:num_samples * 2])
+                import math
+                rms = math.sqrt(sum(s * s for s in samples_raw) / num_samples) / 32768.0
+                peak = max(abs(s) for s in samples_raw) / 32768.0
+                logger.info(
+                    "[%s] 🎤 Raw PCM stats — samples=%d  RMS=%.6f  peak=%.6f  %s",
+                    request_id, num_samples, rms, peak,
+                    "(very quiet)" if rms < 0.001 else "(quiet)" if rms < 0.01 else "(audible)",
+                )
+        except Exception as _stats_exc:
+            logger.debug("[%s] Could not compute audio stats: %s", request_id, _stats_exc)
+
         # ── Preprocessing ──────────────────────────────────────────────────
         try:
             tensor = preprocess_audio(audio_bytes)
@@ -222,6 +240,7 @@ def create_app() -> Flask:
             return jsonify({"error": "Internal preprocessing error."}), 500
 
         # ── TFLite inference ───────────────────────────────────────────────
+        logger.info("[%s] 🚀 Sending preprocessed tensor to ML model...", request_id)
         try:
             probability = _run_inference(tensor)
         except RuntimeError as exc:

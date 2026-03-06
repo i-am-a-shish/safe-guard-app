@@ -64,6 +64,23 @@ class TfliteService {
         1,
       ]);
 
+      // Debug: log input tensor statistics to confirm model received audio
+      double minVal = double.infinity, maxVal = double.negativeInfinity, sum = 0.0;
+      for (final v in spectrogramData) {
+        if (v < minVal) minVal = v;
+        if (v > maxVal) maxVal = v;
+        sum += v;
+      }
+      final mean = sum / spectrogramData.length;
+      debugPrint(
+        'TfliteService: 📊 Input tensor stats — '
+        'min: ${minVal.toStringAsFixed(4)}  '
+        'max: ${maxVal.toStringAsFixed(4)}  '
+        'mean: ${mean.toStringAsFixed(4)}  '
+        'size: ${spectrogramData.length}'
+      );
+      debugPrint('TfliteService: 🚀 Running inference on model...');
+
       // Prepare output buffer [1, 1]
       final output = List.filled(1, List.filled(1, 0.0));
 
@@ -71,7 +88,7 @@ class TfliteService {
       _interpreter!.run(input, output);
 
       final probability = output[0][0];
-      debugPrint('TfliteService: 🧠 Inference result = $probability');
+      debugPrint('TfliteService: ✅ Model inference complete — probability: ${probability.toStringAsFixed(6)}');
 
       return probability;
     } catch (e, stackTrace) {

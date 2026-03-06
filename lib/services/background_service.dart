@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 import 'dart:typed_data';
 import 'dart:ui';
 import 'package:flutter/foundation.dart';
@@ -137,6 +138,38 @@ class BackgroundServiceManager {
     _startAudioPipeline(service);
   }
 
+  // ── Low-sound sensitivity helpers ──────────────────────────────────────────
+
+  /// Software gain applied to every audio window before model inference.
+  /// 4.0x ≈ +12 dB ensures whispers / muffled sounds reach the model with
+  /// sufficient energy. Change to 1.0 to disable.
+  static const double _audioGain = 4.0;
+
+  /// Compute RMS of raw PCM-16 bytes, normalised to [0.0, 1.0].
+  static double _computeRMS(Uint8List audioBytes) {
+    if (audioBytes.length < 2) return 0.0;
+    final int16List = Int16List.view(audioBytes.buffer);
+    if (int16List.isEmpty) return 0.0;
+    double sumSq = 0.0;
+    for (final sample in int16List) {
+      final norm = sample / 32768.0;
+      sumSq += norm * norm;
+    }
+    return sqrt(sumSq / int16List.length);
+  }
+
+  /// Apply software gain to raw PCM-16 bytes, clamping to avoid int16 overflow.
+  /// Even very quiet sounds become visible to the model after amplification.
+  static Uint8List _amplifyAudio(Uint8List audioBytes, double gain) {
+    if (gain == 1.0) return audioBytes;
+    final src = Int16List.view(audioBytes.buffer);
+    final dst = Int16List(src.length);
+    for (int i = 0; i < src.length; i++) {
+      dst[i] = (src[i] * gain).round().clamp(-32768, 32767);
+    }
+    return dst.buffer.asUint8List();
+  }
+
   /// Audio pipeline: Record → Process → Infer → Alert
   static Future<void> _startAudioPipeline(ServiceInstance service) async {
     final recorder = AudioRecorder();
@@ -212,9 +245,27 @@ class BackgroundServiceManager {
 
           inferenceCount++;
 
+          // ── Debug: RMS of raw captured audio ─────────────────────────────
+          final rawRms = _computeRMS(audioBytes);
+          debugPrint(
+            'BackgroundService: 🎤 [#$inferenceCount] Raw audio RMS: ${rawRms.toStringAsFixed(6)}'
+            '  bytes: ${audioBytes.length}'
+            '  ${rawRms < 0.001 ? "(very quiet)" : rawRms < 0.01 ? "(quiet)" : "(audible)"}'
+          );
+
+          // ── Amplify audio for low-sound sensitivity ───────────────────────
+          final amplifiedBytes = _amplifyAudio(audioBytes, _audioGain);
+          final ampRms = _computeRMS(amplifiedBytes);
+          debugPrint(
+            'BackgroundService: 🔊 [#$inferenceCount] After amplification (${_audioGain}x):'
+            '  RMS: ${ampRms.toStringAsFixed(6)}'
+          );
+
           try {
-            // 1. Convert to mel spectrogram
-            final spectrogram = AudioProcessingService.processAudioToSpectrogram(audioBytes);
+            // 1. Convert amplified audio to mel spectrogram
+            debugPrint('BackgroundService: 📤 [#$inferenceCount] Sending audio to ML model (spectrogram preprocessing)...');
+            final spectrogram = AudioProcessingService.processAudioToSpectrogram(amplifiedBytes);
+            debugPrint('BackgroundService: ✅ [#$inferenceCount] Spectrogram ready — tensor size: ${spectrogram.length}  sending to TFLite...');
 
             // 2. Run TFLite inference
             final probability = TfliteService.runInference(spectrogram);
